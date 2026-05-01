@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DB CrossCheck — Weekly Activation Verifier</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0d0f14; --surface: #151820; --card: #1c2030; --border: #252a3a;
+    --accent: #4f8ef7; --accent2: #38d9a9; --pass: #38d9a9; --issue: #ff6b6b;
+    --text: #e2e8f0; --muted: #64748b;
+    --mono: 'Space Mono', monospace; --sans: 'DM Sans', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; padding-bottom: 60px; }
+
+  header {
+    background: linear-gradient(135deg, #0d0f14, #151e35);
+    border-bottom: 1px solid var(--border);
+    padding: 28px 40px 24px;
+    display: flex; align-items: center; gap: 20px;
+  }
+  .logo-mark {
+    width: 44px; height: 44px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 18px; font-weight: 700; color: #fff; flex-shrink: 0;
+  }
+  .header-text h1 { font-size: 20px; font-weight: 600; letter-spacing: -.3px; }
+  .header-text p  { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 36px 24px 0; }
+
+  .step {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 28px 30px; margin-bottom: 20px;
+  }
+  .step-label {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 8px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .step-label::after { content:''; flex:1; height:1px; background: var(--border); }
+  .step h2 { font-size: 15px; font-weight: 600; margin-bottom: 18px; }
+
+  .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media(max-width:600px){ .upload-grid { grid-template-columns: 1fr; } }
+
+  .upload-zone {
+    border: 2px dashed var(--border); border-radius: 10px;
+    padding: 24px 16px; text-align: center; cursor: pointer;
+    transition: all .2s; position: relative; background: var(--surface);
+  }
+  .upload-zone:hover { border-color: var(--accent); background: rgba(79,142,247,.05); }
+  .upload-zone.loaded { border-color: var(--accent2); border-style: solid; }
+  .upload-zone input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+  .upload-icon { font-size: 28px; margin-bottom: 8px; }
+  .upload-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .upload-sub   { font-size: 12px; color: var(--muted); }
+  .upload-filename { font-family: var(--mono); font-size: 11px; color: var(--accent2); margin-top: 8px; word-break: break-all; }
+
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media(max-width:600px){ .field-row { grid-template-columns: 1fr; } }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .field input {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; color: var(--text); font-family: var(--sans); font-size: 14px;
+    transition: border .2s; outline: none; width: 100%;
+  }
+  .field input:focus { border-color: var(--accent); }
+  .field input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.6); }
+
+  .run-btn {
+    width: 100%; padding: 15px; border: none; border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), #3a6fd8);
+    color: #fff; font-family: var(--sans); font-size: 15px; font-weight: 600;
+    cursor: pointer; transition: opacity .2s, transform .1s; margin-top: 4px;
+  }
+  .run-btn:hover { opacity: .9; } .run-btn:active { transform: scale(.99); }
+  .run-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  #status-bar {
+    display: none; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;
+    font-size: 13px; color: var(--muted); font-family: var(--mono);
+    align-items: center; gap: 10px;
+  }
+  #status-bar.visible { display: flex; }
+  .spinner {
+    width: 16px; height: 16px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .7s linear infinite; flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #results-section { display: none; }
+  #results-section.visible { display: block; }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 20px; }
+  @media(max-width:600px){ .summary-grid { grid-template-columns: repeat(2,1fr); } }
+
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center; }
+  .stat-val   { font-family: var(--mono); font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+  .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .stat-card.pass  .stat-val { color: var(--pass); }
+  .stat-card.issue .stat-val { color: var(--issue); }
+  .stat-card.total .stat-val { color: var(--accent); }
+  .stat-card.notfound .stat-val { color: #f59e0b; }
+
+  .download-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 22px; background: linear-gradient(135deg, var(--accent2), #2ba88a);
+    color: #0d0f14; font-family: var(--sans); font-size: 14px; font-weight: 700;
+    border: none; border-radius: 8px; cursor: pointer; transition: opacity .2s; margin-bottom: 20px;
+  }
+  .download-btn:hover { opacity: .88; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    background: var(--surface); padding: 12px 14px; text-align: left;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .5px; color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  tbody tr { border-bottom: 1px solid rgba(37,42,58,.6); transition: background .15s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: rgba(79,142,247,.04); }
+  td { padding: 11px 14px; vertical-align: middle; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
+    border-radius: 20px; font-size: 11px; font-weight: 600; font-family: var(--mono); white-space: nowrap;
+  }
+  .badge.pass     { background: rgba(56,217,169,.15); color: var(--pass); }
+  .badge.issue    { background: rgba(255,107,107,.15); color: var(--issue); }
+  .badge.notfound { background: rgba(245,158,11,.15);  color: #f59e0b; }
+
+  .imei-cell   { font-family: var(--mono); font-size: 12px; letter-spacing: .5px; }
+  .result-cell { font-size: 12px; max-width: 280px; line-height: 1.4; }
+
+  .error-box {
+    background: rgba(255,107,107,.1); border: 1px solid rgba(255,107,107,.3);
+    border-radius: 10px; padding: 14px 18px; font-size: 13px;
+    color: var(--issue); margin-bottom: 16px; display: none;
+  }
+  .error-box.visible { display: block; }
+
+  .info-note {
+    background: rgba(79,142,247,.08); border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0; padding: 12px 16px;
+    font-size: 12.5px; color: var(--muted); margin-top: 14px; line-height: 1.6;
+  }
+
+  details { margin-top: 12px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--accent); font-weight: 500; user-select: none; outline: none; padding: 6px 0; }
+  .plan-table .table-wrap { margin-top:10px; }
+  .plan-table table { font-size: 12px; }
+  .plan-table thead th { background: var(--bg); }
+
+  .filter-row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .filter-btn {
+    padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--muted); font-size: 12px;
+    cursor: pointer; transition: all .15s; font-family: var(--sans);
+  }
+  .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .filter-btn:hover:not(.active) { border-color: var(--accent); color: var(--text); }
+
+  .mt16 { margin-top: 16px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark">DB</div>
+  <div class="header-text">
+    <h1>DB CrossCheck — Weekly Activation Verifier</h1>
+    <p>Compare Activations Sheet against FF Database · Flags mismatches automatically</p>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- STEP 1 -->
+  <div class="step">
+    <div class="step-label">Step 1 &nbsp; Upload Files</div>
+    <h2>Provide Both Source Files</h2>
+    <div class="upload-grid">
+      <div class="upload-zone" id="zone-gs">
+        <input type="file" id="file-gs" accept=".xlsx,.xls,.csv" onchange="handleFile('gs',this)">
+        <div class="upload-icon">📋</div>
+        <div class="upload-title">Activations Sheet</div>
+        <div class="upload-sub">.xlsx export · uses "Activations" tab only</div>
+        <div class="upload-filename" id="fn-gs"></div>
+      </div>
+      <div class="upload-zone" id="zone-ff">
+        <input type="file" id="file-ff" accept=".xlsx,.xls" onchange="handleFile('ff',this)">
+        <div class="upload-icon">🗄️</div>
+        <div class="upload-title">FF Database</div>
+        <div class="upload-sub">.xlsx file provided by supervisor</div>
+        <div class="upload-filename" id="fn-ff"></div>
+      </div>
+    </div>
+    <div class="info-note">
+      📌 Files are processed entirely in your browser — no data is sent to any server. Neither file is modified.
+    </div>
+    <details>
+      <summary>View all supported Plan Name mappings</summary>
+      <div class="plan-table">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Activations Sheet (any casing / typo tolerated)</th><th>Matches FF Database Plan</th></tr></thead>
+            <tbody>
+              <tr><td>Basic Monthly · Basic Montly · Basic Monhly · Basid Monthly · BAsic Monthly · basic monthy · MONTHLY · Monthly · Montly · Basic Monthly |</td><td>60 seconds</td></tr>
+              <tr><td>Plus Monthly · PLus Monthly · plus monthly</td><td>30 seconds</td></tr>
+              <tr><td>Basic Quarterly · Basic Quaterly · basic quarterly · basic quarerly</td><td>60 sec quarterly</td></tr>
+              <tr><td>Plus Quarterly · Plus quarterly · plus quarterly</td><td>30 sec quarterly</td></tr>
+              <tr><td>Basic Annual Plan · Basic Annual · Basic Yearly · BasicAnnual · BasicYearly · BASIC ANNUAL · basic yearly · Basic AP · Amazon Annual</td><td>60 seconds - ap</td></tr>
+              <tr><td>Plus Annual Plan · Plus Annual · Plus Yearly · plus yearly</td><td>30 seconds - ap</td></tr>
+              <tr><td>Elite Monthly</td><td>Med-Monthly</td></tr>
+              <tr><td>Elite Annual</td><td>Med-Annual</td></tr>
+              <tr><td>5 Seconds · 5 second plan</td><td>5 seconds</td></tr>
+              <tr><td>10 Seconds · 10 second plan</td><td>10 seconds</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step">
+    <div class="step-label">Step 2 &nbsp; Configure</div>
+    <h2>Date Range &amp; Agent Info</h2>
+    <div class="field-row">
+      <div class="field">
+        <label>Start Date</label>
+        <input type="date" id="date-start">
+      </div>
+      <div class="field">
+        <label>End Date</label>
+        <input type="date" id="date-end">
+      </div>
+    </div>
+    <div class="field mt16">
+      <label>Agent Name</label>
+      <input type="text" id="agent-name" placeholder="Your full name">
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step">
+    <div class="step-label">Step 3 &nbsp; Run</div>
+    <h2>Execute Cross-Check</h2>
+    <div class="error-box" id="error-box"></div>
+    <button class="run-btn" id="run-btn" onclick="runCheck()">🔍 &nbsp; Run DB CrossCheck</button>
+  </div>
+
+  <div id="status-bar">
+    <div class="spinner"></div>
+    <span id="status-text">Processing…</span>
+  </div>
+
+  <div id="results-section">
+    <div class="step">
+      <div class="step-label">Results</div>
+      <h2>CrossCheck Report</h2>
+
+      <div class="summary-grid">
+        <div class="stat-card total">
+          <div class="stat-val" id="stat-total">0</div>
+          <div class="stat-label">Total Rows</div>
+        </div>
+        <div class="stat-card pass">
+          <div class="stat-val" id="stat-pass">0</div>
+          <div class="stat-label">Passed</div>
+        </div>
+        <div class="stat-card issue">
+          <div class="stat-val" id="stat-issue">0</div>
+          <div class="stat-label">Issues Found</div>
+        </div>
+        <div class="stat-card notfound">
+          <div class="stat-val" id="stat-nf">0</div>
+          <div class="stat-label">Not in FF DB</div>
+        </div>
+      </div>
+
+      <button class="download-btn" onclick="downloadReport()">⬇ &nbsp; Download Excel Report (.xlsx)</button>
+
+      <div class="filter-row">
+        <span style="font-size:12px;color:var(--muted);margin-right:4px">Filter:</span>
+        <button class="filter-btn active" onclick="applyFilter('all',this)">All</button>
+        <button class="filter-btn" onclick="applyFilter('Passed',this)">✅ Passed</button>
+        <button class="filter-btn" onclick="applyFilter('Issue',this)">⚠️ Issues</button>
+        <button class="filter-btn" onclick="applyFilter('NotFound',this)">🔍 Not in FF DB</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>IMEI</th>
+              <th>Activation Date</th>
+              <th>Plan — Activations Sheet</th>
+              <th>Plan — FF Database</th>
+              <th>Status in FF DB</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────
+let gsWorkbook = null, ffWorkbook = null;
+let reportRows = [];
+let currentFilter = 'all';
+
+// ── Plan mapping (normalised GS → normalised FF) ───────────
+const PLAN_MAP = {
+  // Basic Monthly
+  "basic monthly":     "60 seconds",
+  "basic montly":      "60 seconds",
+  "basic monhly":      "60 seconds",
+  "basic monthl":      "60 seconds",
+  "basid monthly":     "60 seconds",
+  "basic monthy":      "60 seconds",
+  "basic monthly |":   "60 seconds",
+  "basic monthly-ap":  "60 seconds",
+  "monthly":           "60 seconds",
+  "montly":            "60 seconds",
+  // Plus Monthly
+  "plus monthly":      "30 seconds",
+  "plus montly":       "30 seconds",
+  // Basic Quarterly
+  "basic quarterly":   "60 sec quarterly",
+  "basic quaterly":    "60 sec quarterly",
+  "basic quarerly":    "60 sec quarterly",
+  // Plus Quarterly
+  "plus quarterly":    "30 sec quarterly",
+  "plus quaterly":     "30 sec quarterly",
+  // Basic Annual
+  "basic annual plan": "60 seconds - ap",
+  "basic annual":      "60 seconds - ap",
+  "basic yearly":      "60 seconds - ap",
+  "basicannual":       "60 seconds - ap",
+  "basicyearly":       "60 seconds - ap",
+  "basic ap":          "60 seconds - ap",
+  "amazon annual":     "60 seconds - ap",
+  // Plus Annual
+  "plus annual plan":  "30 seconds - ap",
+  "plus annual":       "30 seconds - ap",
+  "plus yearly":       "30 seconds - ap",
+  // Elite
+  "elite monthly":     "med-monthly",
+  "elite annual":      "med-annual",
+  // 5/10 seconds
+  "5 seconds":         "5 seconds",
+  "5 second plan":     "5 seconds",
+  "10 seconds":        "10 seconds",
+  "10 second plan":    "10 seconds",
+  // Pass-through if GS already has FF name
+  "60 seconds":        "60 seconds",
+  "30 seconds":        "30 seconds",
+  "60 sec quarterly":  "60 sec quarterly",
+  "30 sec quarterly":  "30 sec quarterly",
+  "60 seconds - ap":   "60 seconds - ap",
+  "30 seconds - ap":   "30 seconds - ap",
+  "med-monthly":       "med-monthly",
+  "med-annual":        "med-annual",
+};
+
+function normPlan(s) {
+  return (s||'').toString().trim().toLowerCase().replace(/\s+/g,' ');
+}
+
+function plansMatch(gsPlan, ffPlan) {
+  if (!gsPlan || !ffPlan || ffPlan==='Not Found') return false;
+  const gsN = normPlan(gsPlan);
+  const ffN = normPlan(ffPlan);
+  if (gsN === ffN) return true;
+  const mapped = PLAN_MAP[gsN];
+  return mapped !== undefined && mapped === ffN;
+}
+
+// ── IMEI normalisation ─────────────────────────────────────
+// xlsx.js reads large integers as floats: 868038074386989.0
+// We strip trailing .0* then remove any non-digit
+function normImei(v) {
+  if (v===null||v===undefined||v==='') return '';
+  let s = v.toString().trim();
+  s = s.replace(/\.0+$/, '');   // strip float suffix
+  s = s.replace(/\D/g,'');       // digits only
+  return s;
+}
+
+// ── Date helpers ───────────────────────────────────────────
+function parseExcelDate(val) {
+  // Handles: Date objects, Excel serial numbers, ISO strings, "MM/DD/YYYY"
+  if (!val && val !== 0) return null;
+  if (val instanceof Date) return isNaN(val) ? null : val;
+  if (typeof val === 'number') {
+    // Reject IMEI-sized numbers masquerading as dates
+    if (val > 2958465 || val < 1) return null; // Excel date range ~1900-9999
+    try {
+      const parsed = XLSX.SSF.parse_date_code(val);
+      if (parsed && parsed.y) return new Date(parsed.y, parsed.m-1, parsed.d);
+    } catch(e){}
+    return null;
+  }
+  const s = val.toString().trim();
+  if (!s || s==='0' || s.startsWith('0000')) return null;
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+
+function fmtDate(d) {
+  if (!d) return '';
+  return String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+'/'+d.getFullYear();
+}
+function fmtDateTime(d) {
+  if (!d) return '';
+  return fmtDate(d)+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+
+// ── File loading ───────────────────────────────────────────
+function handleFile(which, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      // raw:true → keeps numbers as raw values, avoids coercing IMEIs into dates
+      const wb = XLSX.read(e.target.result, { type:'array', raw:true, cellDates:false });
+      if (which==='gs') { gsWorkbook=wb; setZoneLoaded('zone-gs','fn-gs',file.name); }
+      else              { ffWorkbook=wb; setZoneLoaded('zone-ff','fn-ff',file.name); }
+    } catch(err) {
+      showError('Could not read "'+file.name+'". Ensure it is a valid .xlsx file.');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function setZoneLoaded(zoneId, fnId, name) {
+  document.getElementById(zoneId).classList.add('loaded');
+  document.getElementById(fnId).textContent = '✓ '+name;
+}
+
+// ── Sheet → array of objects ───────────────────────────────
+// Finds first non-empty row as header, skips blanks above it
+function sheetToObjects(ws) {
+  const ref = ws['!ref'];
+  if (!ref) return [];
+  const range = XLSX.utils.decode_range(ref);
+
+  // Find header row (first row with at least one non-empty cell in columns A-K)
+  let headerRow = range.s.r;
+  for (let r = range.s.r; r <= Math.min(range.s.r+15, range.e.r); r++) {
+    let found = false;
+    for (let c = range.s.c; c <= Math.min(range.s.c+15, range.e.c); c++) {
+      const cell = ws[XLSX.utils.encode_cell({r,c})];
+      if (cell && cell.v!==null && cell.v!==undefined && cell.v!=='') { found=true; break; }
+    }
+    if (found) { headerRow=r; break; }
+  }
+
+  // Read header names
+  const headers = [];
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const cell = ws[XLSX.utils.encode_cell({r:headerRow, c})];
+    headers.push(cell ? (cell.v||'').toString().trim() : '');
+  }
+
+  // Read data rows
+  const rows = [];
+  for (let r = headerRow+1; r <= range.e.r; r++) {
+    const obj = {}; let hasAny = false;
+    for (let ci=0; ci<headers.length; ci++) {
+      const cell = ws[XLSX.utils.encode_cell({r, c: range.s.c+ci})];
+      const v = cell ? cell.v : '';
+      if (headers[ci]) obj[headers[ci]] = (v===null||v===undefined) ? '' : v;
+      if (v!==null && v!==undefined && v!=='') hasAny=true;
+    }
+    if (hasAny) rows.push(obj);
+  }
+  return rows;
+}
+
+// Case-insensitive column lookup
+function findVal(row, candidates) {
+  for (const key of Object.keys(row)) {
+    const kl = key.toLowerCase().trim();
+    for (const c of candidates) {
+      if (kl === c.toLowerCase()) return row[key];
+    }
+  }
+  return '';
+}
+
+// ── Validation & UI ────────────────────────────────────────
+function showError(msg) {
+  const b = document.getElementById('error-box');
+  b.textContent='⚠ '+msg; b.classList.add('visible');
+}
+function hideError() { document.getElementById('error-box').classList.remove('visible'); }
+
+function escHtml(s) {
+  return (s||'').toString()
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Run ────────────────────────────────────────────────────
+function runCheck() {
+  hideError();
+  if (!gsWorkbook) return showError('Please upload the Activations Sheet.');
+  if (!ffWorkbook) return showError('Please upload the FF Database.');
+
+  const startVal = document.getElementById('date-start').value;
+  const endVal   = document.getElementById('date-end').value;
+  const agent    = document.getElementById('agent-name').value.trim();
+
+  if (!startVal||!endVal) return showError('Please select both Start and End Date.');
+  if (!agent)             return showError('Please enter the Agent Name.');
+
+  const startDate = new Date(startVal+'T00:00:00');
+  const endDate   = new Date(endVal+'T23:59:59');
+  if (startDate > endDate) return showError('Start Date must be on or before End Date.');
+
+  document.getElementById('status-bar').classList.add('visible');
+  document.getElementById('status-text').textContent = 'Reading files…';
+  document.getElementById('run-btn').disabled = true;
+  document.getElementById('results-section').classList.remove('visible');
+
+  setTimeout(() => {
+    try { _doCheck(startDate, endDate, agent); }
+    catch(err) {
+      document.getElementById('status-bar').classList.remove('visible');
+      document.getElementById('run-btn').disabled = false;
+      showError('Unexpected error: '+err.message);
+      console.error(err);
+    }
+  }, 80);
+}
+
+function _doCheck(startDate, endDate, agent) {
+  const setStatus = t => document.getElementById('status-text').textContent = t;
+
+  // ── Load Activations sheet ──
+  setStatus('Reading Activations sheet…');
+  const gsNames = gsWorkbook.SheetNames;
+  const actTab  = gsNames.find(n => n.toLowerCase().trim()==='activations') || gsNames[0];
+  const gsRows  = sheetToObjects(gsWorkbook.Sheets[actTab]);
+
+  // ── Load FF Database ──
+  setStatus('Loading FF Database…');
+  const ffRows = sheetToObjects(ffWorkbook.Sheets[ffWorkbook.SheetNames[0]]);
+
+  // Build IMEI map
+  const ffMap = new Map();
+  for (const row of ffRows) {
+    const imei = normImei(findVal(row, ['IMEI','imei','Imei','IMEI Number']));
+    if (imei.length >= 10) ffMap.set(imei, row);
+  }
+
+  // ── Filter GS rows by date range ──
+  setStatus('Filtering by date range…');
+  const filtered = [];
+  for (const row of gsRows) {
+    const dateRaw = findVal(row, ['Date','date','Activation Date','activation date','Act Date','activated date']);
+    const d = parseExcelDate(dateRaw);
+    if (!d) continue;
+    if (d >= startDate && d <= endDate) filtered.push({row, date:d});
+  }
+
+  if (filtered.length===0) {
+    document.getElementById('status-bar').classList.remove('visible');
+    document.getElementById('run-btn').disabled = false;
+    return showError(
+      `No activation rows found between ${fmtDate(startDate)} and ${fmtDate(endDate)}. ` +
+      `Verify the date range or check that the sheet has data in this period.`
+    );
+  }
+
+  // ── Cross-check ──
+  setStatus(`Checking ${filtered.length} rows…`);
+  const now = new Date();
+  reportRows = [];
+
+  for (const {row, date} of filtered) {
+    const imeiRaw = findVal(row, ['Imei','IMEI','imei','IMEI Number']);
+    const imei    = normImei(imeiRaw);
+    const gsPlan  = (findVal(row, ['Plan','plan','Plan Name','Package'])||'').toString().trim();
+
+    let ffPlan='Not Found', ffStatus='Not Found';
+    const issues = [];
+
+    if (!imei || imei.length!==15) {
+      issues.push(`Invalid IMEI — got "${imeiRaw}", expected 15 digits`);
+    } else {
+      const ffRow = ffMap.get(imei);
+      if (!ffRow) {
+        issues.push('IMEI not found in FF Database');
+      } else {
+        ffPlan   = (findVal(ffRow, ['Plan','plan','Plan Name'])||'').toString().trim();
+        ffStatus = (findVal(ffRow, ['Status','status','Device Status','Account Status'])||'').toString().trim();
+
+        if (ffStatus.toLowerCase()!=='active') {
+          issues.push(`Status is "${ffStatus}" (expected "Active")`);
+        }
+        if (!plansMatch(gsPlan, ffPlan)) {
+          issues.push(`Plan mismatch: Sheet="${gsPlan}" / FF DB="${ffPlan}"`);
+        }
+      }
+    }
+
+    reportRows.push({
+      'IMEI':                   imei || imeiRaw || '',
+      'Activation Date':        fmtDate(date),
+      'Plan — Google Sheet':    gsPlan,
+      'Plan — FF Database':     ffPlan,
+      'Status in FF Database':  ffStatus,
+      'Result':                 issues.length===0 ? 'Passed' : 'Issue Found — '+issues.join('; '),
+      'Agent Name':             agent,
+      'Run Date/Time':          fmtDateTime(now),
+    });
+  }
+
+  renderResults();
+  document.getElementById('status-bar').classList.remove('visible');
+  document.getElementById('run-btn').disabled = false;
+  document.getElementById('results-section').classList.add('visible');
+  document.getElementById('results-section').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+// ── Render ─────────────────────────────────────────────────
+function renderResults() {
+  const total   = reportRows.length;
+  const passed  = reportRows.filter(r=>r['Result']==='Passed').length;
+  const issues  = total - passed;
+  const notFound= reportRows.filter(r=>r['Plan — FF Database']==='Not Found').length;
+
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-pass').textContent  = passed;
+  document.getElementById('stat-issue').textContent = issues;
+  document.getElementById('stat-nf').textContent    = notFound;
+
+  renderTable();
+}
+
+function renderTable() {
+  const tbody = document.getElementById('results-body');
+  tbody.innerHTML = '';
+  let idx = 0;
+
+  for (const r of reportRows) {
+    const isPassed   = r['Result']==='Passed';
+    const isNotFound = r['Plan — FF Database']==='Not Found';
+
+    if (currentFilter==='Passed'   && !isPassed)   continue;
+    if (currentFilter==='Issue'    &&  isPassed)    continue;
+    if (currentFilter==='NotFound' && !isNotFound)  continue;
+
+    idx++;
+    const resultText = r['Result'];
+    const badgeClass = isPassed ? 'pass' : 'issue';
+
+    const st = r['Status in FF Database'];
+    const statusBadge =
+      st==='Not Found'           ? '<span class="badge notfound">Not Found</span>'  :
+      st.toLowerCase()==='active'? '<span class="badge pass">Active</span>'         :
+                                   `<span class="badge issue">${escHtml(st)}</span>`;
+
+    const shortResult = isPassed ? '✓ Passed'
+      : '⚠ '+escHtml(resultText.replace('Issue Found — ','').substring(0,65))
+        +(resultText.length>75?'…':'');
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="color:var(--muted);font-family:var(--mono);font-size:11px">${idx}</td>
+      <td class="imei-cell">${escHtml(r['IMEI'])}</td>
+      <td style="white-space:nowrap">${escHtml(r['Activation Date'])}</td>
+      <td>${escHtml(r['Plan — Google Sheet'])||'—'}</td>
+      <td>${escHtml(r['Plan — FF Database'])}</td>
+      <td>${statusBadge}</td>
+      <td class="result-cell">
+        <span class="badge ${badgeClass}" title="${escHtml(resultText)}">${shortResult}</span>
+      </td>`;
+    tbody.appendChild(tr);
+  }
+
+  if (idx===0) {
+    tbody.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--muted)">No rows match this filter.</td></tr>`;
+  }
+}
+
+function applyFilter(filter, btn) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTable();
+}
+
+// ── Download ───────────────────────────────────────────────
+function downloadReport() {
+  if (!reportRows.length) return;
+
+  const ws = XLSX.utils.json_to_sheet(reportRows);
+  ws['!cols'] = [{wch:18},{wch:16},{wch:24},{wch:24},{wch:24},{wch:55},{wch:20},{wch:18}];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'CrossCheck Report');
+
+  const agent  = document.getElementById('agent-name').value.trim();
+  const startV = document.getElementById('date-start').value;
+  const endV   = document.getElementById('date-end').value;
+  const total  = reportRows.length;
+  const passed = reportRows.filter(r=>r['Result']==='Passed').length;
+  const issues = total - passed;
+
+  const ws2 = XLSX.utils.aoa_to_sheet([
+    ['DB CrossCheck — Weekly Activation Verifier'],
+    [''],
+    ['Agent',        agent],
+    ['Date Range',   startV+' to '+endV],
+    ['Run At',       new Date().toLocaleString()],
+    [''],
+    ['Total Rows',   total],
+    ['Passed',       passed],
+    ['Issues Found', issues],
+    [''],
+    ['Note', issues>0
+      ? 'Rows marked "Issue Found" must be reviewed by supervisor before the week is closed.'
+      : 'All rows passed — no supervisor review required.'],
+  ]);
+  ws2['!cols'] = [{wch:22},{wch:55}];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
+
+  XLSX.writeFile(wb, `DB_CrossCheck_${startV}_to_${endV}_${agent.replace(/\s+/g,'_')}.xlsx`);
+}
+</script>
+</body>
+</html>
